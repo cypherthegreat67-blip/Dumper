@@ -8,7 +8,7 @@ intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 SYSTEM_PROMPT = """You are a Lua deobfuscator. Your job is to take obfuscated Lua scripts (such as WeAreDevs/Prometheus obfuscated scripts) and return clean, fully readable Lua code.
 
@@ -20,29 +20,30 @@ Rules:
 - Only output the deobfuscated Lua code, nothing else — no explanations, no markdown, no code blocks
 - If the script is too large or complex, deobfuscate as much as possible and output what you can"""
 
-def deobfuscate_with_groq(content: str) -> str:
-    if len(content) > 50000:
-        content = content[:50000]
-
+def deobfuscate_with_gemini(content: str) -> str:
     response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        },
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+        headers={"Content-Type": "application/json"},
         json={
-            "model": "llama-3.3-70b-versatile",
-            "max_tokens": 8096,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Deobfuscate this Lua script:\n\n{content}"}
-            ]
+            "system_instruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"Deobfuscate this Lua script:\n\n{content}"}]
+                }
+            ],
+            "generationConfig": {
+                "maxOutputTokens": 8192
+            }
         },
         timeout=120
     )
 
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    data = response.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
 @bot.event
@@ -70,7 +71,13 @@ async def deobf_link(interaction: discord.Interaction, link: str):
 
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
-        result = deobfuscate_with_groq(content)
+        result = deobfuscate_with_gemini(content)
+
+        # Strip markdown code blocks if Gemini adds them
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1]
+        if result.endswith("```"):
+            result = result.rsplit("```", 1)[0]
 
         if len(result) > 1900:
             file = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
@@ -99,7 +106,13 @@ async def deobf_file(interaction: discord.Interaction, file: discord.Attachment)
 
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
-        result = deobfuscate_with_groq(content)
+        result = deobfuscate_with_gemini(content)
+
+        # Strip markdown code blocks if Gemini adds them
+        if result.startswith("```"):
+            result = result.split("\n", 1)[1]
+        if result.endswith("```"):
+            result = result.rsplit("```", 1)[0]
 
         if len(result) > 1900:
             file_out = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
