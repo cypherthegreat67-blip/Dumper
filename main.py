@@ -3,6 +3,7 @@ from discord import app_commands
 import os
 import requests
 import io
+import json
 
 intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
@@ -21,27 +22,31 @@ Rules:
 - If the script is too large or complex, deobfuscate as much as possible and output what you can"""
 
 def deobfuscate_with_gemini(content: str) -> str:
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_PROMPT}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": "Deobfuscate this Lua script:\n\n" + content}]
+            }
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 8192
+        }
+    }
+
     response = requests.post(
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
         headers={"Content-Type": "application/json"},
-        json={
-            "system_instruction": {
-                "parts": [{"text": SYSTEM_PROMPT}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": f"Deobfuscate this Lua script:\n\n{content}"}]
-                }
-            ],
-            "generationConfig": {
-                "maxOutputTokens": 8192
-            }
-        },
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         timeout=120
     )
 
-    response.raise_for_status()
+    if not response.ok:
+        raise Exception(f"Gemini API error {response.status_code}: {response.text[:500]}")
+
     data = response.json()
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -50,6 +55,20 @@ def deobfuscate_with_gemini(content: str) -> str:
 async def on_ready():
     await tree.sync()
     print(f'✅ Bot is online! Logged in as {bot.user}')
+
+
+async def send_result(channel, result: str):
+    # Strip markdown code blocks if Gemini adds them
+    if result.startswith("```"):
+        result = result.split("\n", 1)[1]
+    if result.endswith("```"):
+        result = result.rsplit("```", 1)[0].strip()
+
+    if len(result) > 1900:
+        file = discord.File(io.BytesIO(result.encode("utf-8")), filename="deobfuscated.lua")
+        await channel.send("✅ Deobfuscation complete!", file=file)
+    else:
+        await channel.send(f"✅ Deobfuscation complete!\n```lua\n{result}\n```")
 
 
 @tree.command(name="l", description="Deobfuscate Lua from a direct link")
@@ -72,21 +91,9 @@ async def deobf_link(interaction: discord.Interaction, link: str):
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
         result = deobfuscate_with_gemini(content)
-
-        # Strip markdown code blocks if Gemini adds them
-        if result.startswith("```"):
-            result = result.split("\n", 1)[1]
-        if result.endswith("```"):
-            result = result.rsplit("```", 1)[0]
-
-        if len(result) > 1900:
-            file = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
-            await interaction.channel.send("✅ Deobfuscation complete!", file=file)
-        else:
-            await interaction.channel.send(f"✅ Deobfuscation complete!\n```lua\n{result}\n```")
-
+        await send_result(interaction.channel, result)
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)[:1900]}")
+        await interaction.channel.send(f"❌ Error: {str(e)[:1900]}")
 
 
 @tree.command(name="f", description="Deobfuscate Lua from an uploaded file")
@@ -107,21 +114,9 @@ async def deobf_file(interaction: discord.Interaction, file: discord.Attachment)
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
         result = deobfuscate_with_gemini(content)
-
-        # Strip markdown code blocks if Gemini adds them
-        if result.startswith("```"):
-            result = result.split("\n", 1)[1]
-        if result.endswith("```"):
-            result = result.rsplit("```", 1)[0]
-
-        if len(result) > 1900:
-            file_out = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
-            await interaction.channel.send("✅ Deobfuscation complete!", file=file_out)
-        else:
-            await interaction.channel.send(f"✅ Deobfuscation complete!\n```lua\n{result}\n```")
-
+        await send_result(interaction.channel, result)
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)[:1900]}")
+        await interaction.channel.send(f"❌ Error: {str(e)[:1900]}")
 
 
 if __name__ == "__main__":
