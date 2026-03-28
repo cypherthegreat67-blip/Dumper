@@ -38,7 +38,7 @@ def deobfuscate_with_gemini(content: str) -> str:
     }
 
     response = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}",
         headers={"Content-Type": "application/json"},
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         timeout=120
