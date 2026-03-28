@@ -2,13 +2,13 @@ import discord
 from discord import app_commands
 import os
 import requests
-import anthropic
+import io
 
 intents = discord.Intents.default()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 SYSTEM_PROMPT = """You are a Lua deobfuscator. Your job is to take obfuscated Lua scripts (such as WeAreDevs/Prometheus obfuscated scripts) and return clean, fully readable Lua code.
 
@@ -20,20 +20,29 @@ Rules:
 - Only output the deobfuscated Lua code, nothing else — no explanations, no markdown, no code blocks
 - If the script is too large or complex, deobfuscate as much as possible and output what you can"""
 
-async def deobfuscate_with_claude(content: str) -> str:
+def deobfuscate_with_groq(content: str) -> str:
     if len(content) > 50000:
         content = content[:50000]
 
-    message = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=8096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": f"Deobfuscate this Lua script:\n\n{content}"}
-        ]
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": "llama-3.3-70b-versatile",
+            "max_tokens": 8096,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Deobfuscate this Lua script:\n\n{content}"}
+            ]
+        },
+        timeout=120
     )
 
-    return message.content[0].text
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
 
 
 @bot.event
@@ -42,7 +51,7 @@ async def on_ready():
     print(f'✅ Bot is online! Logged in as {bot.user}')
 
 
-@tree.command(name="l", description="Deobfuscate WeAreDevs/Prometheus Lua from a direct link")
+@tree.command(name="l", description="Deobfuscate Lua from a direct link")
 @app_commands.describe(link="Direct raw link to .lua or .txt file")
 async def deobf_link(interaction: discord.Interaction, link: str):
     if not link.startswith("http"):
@@ -61,10 +70,9 @@ async def deobf_link(interaction: discord.Interaction, link: str):
 
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
-        result = await deobfuscate_with_claude(content)
+        result = deobfuscate_with_groq(content)
 
         if len(result) > 1900:
-            import io
             file = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
             await interaction.channel.send("✅ Deobfuscation complete!", file=file)
         else:
@@ -74,7 +82,7 @@ async def deobf_link(interaction: discord.Interaction, link: str):
         await interaction.followup.send(f"❌ Error: {str(e)[:1900]}")
 
 
-@tree.command(name="f", description="Deobfuscate WeAreDevs/Prometheus Lua from an uploaded file")
+@tree.command(name="f", description="Deobfuscate Lua from an uploaded file")
 @app_commands.describe(file="Upload a .lua or .txt file to deobfuscate")
 async def deobf_file(interaction: discord.Interaction, file: discord.Attachment):
     if not (file.filename.endswith(".lua") or file.filename.endswith(".txt")):
@@ -91,10 +99,9 @@ async def deobf_file(interaction: discord.Interaction, file: discord.Attachment)
 
     try:
         await interaction.followup.send("⏳ Deobfuscating, please wait...")
-        result = await deobfuscate_with_claude(content)
+        result = deobfuscate_with_groq(content)
 
         if len(result) > 1900:
-            import io
             file_out = discord.File(io.BytesIO(result.encode()), filename="deobfuscated.lua")
             await interaction.channel.send("✅ Deobfuscation complete!", file=file_out)
         else:
