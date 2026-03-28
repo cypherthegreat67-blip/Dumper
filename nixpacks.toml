@@ -1,8 +1,11 @@
 [phases.setup]
-aptPkgs = ["lua5.1", "git"]
+aptPkgs = ["curl", "git"]
 
 [phases.build]
 cmds = [
+  "curl -fsSL https://github.com/lune-org/lune/releases/latest/download/lune-linux-x86_64.zip -o lune.zip",
+  "unzip lune.zip -d /usr/local/bin",
+  "chmod +x /usr/local/bin/lune",
   "git clone https://github.com/0x251/Prometheus-DeobfuscatorV2.git deobfuscator",
   "git clone https://github.com/wcrddn/Prometheus.git deobfuscator/Prometheus"
 ]
