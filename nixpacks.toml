@@ -1,2 +1,8 @@
 [phases.setup]
-aptPkgs = ["lua5.1"]
+aptPkgs = ["lua5.1", "git"]
+
+[phases.build]
+cmds = [
+  "git clone https://github.com/0x251/Prometheus-DeobfuscatorV2.git deobfuscator",
+  "git clone https://github.com/wcrddn/Prometheus.git deobfuscator/Prometheus"
+]
